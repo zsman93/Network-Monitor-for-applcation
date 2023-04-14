@@ -1,0 +1,46 @@
+$pingTarget = "142.250.187.206" # the IP address or hostname of the network device to ping
+$pingIntervalSeconds = 60 # the interval in seconds to ping the target device
+$dropThreshold = 3 # the number of consecutive ping failures to consider the network as "dropped"
+$delaySeconds =  300 # the delay in seconds before running the scheduled task after detecting a drop
+$scheduledTaskServer = "Remote Server Name" # the hostname or IP address of the server to run the scheduled task on
+$scheduledTaskName = "Name of task that needs to run" # the name of the scheduled task to run
+$username = "email@email.com" # the username for the specified credentials
+$password = ConvertTo-SecureString "PasswordHere" -AsPlainText -Force # the password for the specified credentials
+$cred = New-Object System.Management.Automation.PSCredential ($username, $password) # create the PSCredential object
+ 
+$consecutiveDrops = 0
+$startTime = [DateTime]::Now # cast as DateTime object using [DateTime] type accelerator
+
+while($true) {
+    $pingResult = Test-Connection -ComputerName $pingTarget -Count 1 -Quiet
+    
+    if($pingResult) {
+        Write-Host "Ping successful at $(Get-Date)" -ForegroundColor Green
+        $consecutiveDrops = 0
+    } else {
+        Write-Host "Ping failed at $(Get-Date)" -ForegroundColor Red
+        $consecutiveDrops++
+    }
+    
+    if($consecutiveDrops -ge $dropThreshold) {
+        Write-Host "Network dropped for $consecutiveDrops consecutive pings. Waiting $delaySeconds seconds before running scheduled task on $scheduledTaskServer." -ForegroundColor Yellow
+        
+        Start-Sleep -Seconds $delaySeconds
+        
+        $taskResult = Invoke-Command -ComputerName $scheduledTaskServer -Credential $cred -Authentication Kerberos -ScriptBlock {
+            Start-ScheduledTask -TaskName $using:scheduledTaskName
+        }
+        
+        if($taskResult) {
+            Write-Host "Scheduled task completed successfully." -ForegroundColor Green
+        } else {
+            Write-Host "Scheduled task failed." -ForegroundColor Red
+        }
+        
+        $consecutiveDrops = 0
+    }
+    
+    Start-Sleep -Seconds $pingIntervalSeconds
+    
+    
+    }
